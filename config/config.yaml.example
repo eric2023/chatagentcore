@@ -1,0 +1,95 @@
+# ChatAgentCore 配置文件示例
+# 复制此文件为 config/config.yaml 并填写实际配置
+
+# ==================== 服务器配置 ====================
+server:
+  host: "0.0.0.0"    # 监听地址（0.0.0.0 表示所有网络接口）
+  port: 8000          # 监听端口
+  debug: false        # 调试模式
+
+# ==================== 认证配置 ====================
+auth:
+  type: "fixed_token"          # 认证类型：fixed_token | jwt
+  token: "your_api_token_here" # 固定 API Token（当 type=fixed_token 时使用）
+  # JWT 配置（当 type=jwt 时使用）
+  jwt_secret: "your_jwt_secret_here"
+  jwt_algorithm: "HS256"
+  jwt_expire_hours: 24
+
+# ==================== 日志配置 ====================
+logging:
+  level: "INFO"                 # 日志级别：DEBUG | INFO | WARNING | ERROR
+  file: "logs/chatagentcore.log" # 日志文件路径
+  rotation: "10 MB"             # 日志轮转大小
+  retention: "30 days"          # 日志保留时间
+
+# ==================== 平台配置 ====================
+platforms:
+  # >>> 飞书配置（第一阶段）<<<
+  # 接入方式：WebSocket 长连接（推荐，无需公网 IP）或 Webhook 回调
+  feishu:
+    enabled: true
+    type: "app"                                      # 应用类型：app (企业自建应用) | group (群机器人)
+    app_id: "cli_a909cd66f9f8dbde"                    # 从飞书开放平台获取
+    app_secret: "your_app_secret_here"                # 从飞书开放平台获取
+    connection_mode: "websocket"                     # 连接模式：websocket (推荐，无需公网IP) | webhook (需要公网IP)
+    domain: "feishu"                                  # 域名：feishu (国内) | lark (海外)
+
+  # >>> 企业微信配置（第二阶段）<<<
+  # 接入方式：SDK 长连接订阅事件（待实现）
+  wecom:
+    enabled: false
+    type: "app"
+    corp_id: "ww123456789"          # 从企业微信后台获取
+    agent_id: "1000002"             # 从企业微信后台获取
+    secret: "your_secret"           # 从企业微信后台获取
+
+  # >>> 钉钉配置（第三阶段）<<<
+  # 接入方式：SDK 长连接订阅事件（待实现）
+  dingtalk:
+    enabled: false
+    type: "app"
+    app_key: "your_app_key"         # 从钉钉开放平台获取
+    app_secret: "your_app_secret"   # 从钉钉开放平台获取
+
+# ==================== 帮助文档 ====================
+#
+# 飞书平台接入步骤：
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 1. 创建应用：
+#    - 访问 https://open.feishu.cn/
+#    - 创建「企业自建应用」
+#
+# 2. 获取凭证：
+#    - 在应用「凭证与基础信息」页面获取 App ID 和 App Secret
+#
+# 3. 配置机器人能力（可选）：
+#    - 在应用「权限管理」中启用「机器人」相关权限
+#    - 配置消息发送/接收权限
+#
+# 4. 配置事件订阅（WebSocket 模式）：
+#    - 在应用「事件与回调」页面
+#    - 选择「事件配置方式：使用长连接接收事件（推荐）」
+#    - 添加事件订阅：im.message.receive_v1（必需）、im.message.group_at_v1（可选）
+#
+# 5. 配置事件订阅（Webhook 模式）：
+#    - 在应用「事件与回调」页面
+#    - 选择「事件配置方式：HTTP 回调推送」
+#    - 配置回调 URL：http://your-server:port/webhook/feishu
+#    - 添加事件订阅：im.message.receive_v1（必需）、im.message.group_at_v1（可选）
+#    - 获取 Verification Token（可选，用于验证回调）
+#
+# 6. 安装依赖：
+#    pip install lark_oapi httpx websockets
+#
+# 7. 验证配置：
+#    python cli/test_feishu_ws.py
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# 相关文档：
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# - 飞书开放平台: https://open.feishu.cn/
+# - 飞书服务端 SDK: https://open.feishu.cn/document/server-docs/server-side-sdk
+# - 飞书 WebSocket 长连接: https://open.feishu.cn/document/server-docs/websocket/event-listen-overview
+# - 飞书消息发送: https://open.feishu.cn/document/server-docs/im-v1/message/send
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
