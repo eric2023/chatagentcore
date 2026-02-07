@@ -1,8 +1,5 @@
 """FastAPI application"""
 
-import asyncio
-import time
-from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,18 +9,16 @@ from chatagentcore.core.config_manager import get_config_manager
 from chatagentcore.core.adapter_manager import get_adapter_manager
 from chatagentcore.storage.logger import LogConfig
 from chatagentcore.api.websocket.manager import get_manager
-from chatagentcore.api.models.message import WSAuthMessage, WSSubscribeMessage, WSMessage
+from chatagentcore.api.models.message import WSAuthMessage, WSSubscribeMessage
 from chatagentcore.api.schemas.config import Settings
 from chatagentcore.api.routes import message as message_routes
 from chatagentcore.api.routes import webhook as webhook_routes
-from chatagentcore.api.routes import config as config_routes
 from chatagentcore.adapters.base import Message as BaseMessage
-from fastapi.staticfiles import StaticFiles
 
 
 def _default_message_handler(message: BaseMessage) -> None:
     """
-    默认消息处理器 - 打印接收到的消息并广播到 WebSocket
+    默认消息处理器 - 打印接收到的消息
 
     Args:
         message: 收到的消息对象
@@ -70,30 +65,6 @@ def _default_message_handler(message: BaseMessage) -> None:
 
     logger.info("=" * 70)
 
-    # 广播消息到 WebSocket 订阅者
-    ws_payload = {
-        "platform": message.platform,
-        "sender": message.sender,
-        "conversation": message.conversation,
-        "content": message.content,
-        "timestamp": int(time.time())
-    }
-
-    ws_msg = WSMessage(
-        type="message",
-        channel="messages",
-        timestamp=int(time.time()),
-        payload=ws_payload
-    )
-
-    # 获取当前运行的事件循环并创建广播任务
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(ws_manager.broadcast(ws_msg, channel="messages"))
-    except Exception as e:
-        logger.error(f"Failed to broadcast message via WebSocket: {e}")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -115,11 +86,7 @@ async def lifespan(app: FastAPI):
     # 获取适配器管理器并注册适配器类
     adapter_manager = get_adapter_manager()
     from chatagentcore.adapters.feishu import FeishuAdapter
-    from chatagentcore.adapters.dingtalk import DingTalkAdapter
-    from chatagentcore.adapters.qq import QQAdapter
     adapter_manager.register("feishu", FeishuAdapter)
-    adapter_manager.register("dingtalk", DingTalkAdapter)
-    adapter_manager.register("qq", QQAdapter)
 
     # 根据配置加载启用的平台适配器
     platforms_config = {}
@@ -127,7 +94,6 @@ async def lifespan(app: FastAPI):
         ("feishu", config_manager.platforms.feishu),
         ("wecom", config_manager.platforms.wecom),
         ("dingtalk", config_manager.platforms.dingtalk),
-        ("qq", config_manager.platforms.qq),
     ]:
         if cfg.enabled:
             # 直接使用 model_dump() 获取完整配置，已包含所有字段
@@ -154,92 +120,12 @@ async def lifespan(app: FastAPI):
     # 启动配置文件监控
     await config_manager.watch(interval=5.0)
 
-    # 注册配置变更回调，实现平台热重载
-    async def on_config_change(new_settings: Settings):
-        logger.info("Config change detected, updating adapters and tokens...")
-        
-        # 1. 同步 WebSocket Token
-        if new_settings.auth.token:
-            ws_manager.set_valid_tokens([new_settings.auth.token])
-            
-        # 2. 更新适配器
-        adapter_manager = get_adapter_manager()
-        
-        for platform_name in ["feishu", "dingtalk", "qq"]:
-            cfg = getattr(new_settings.platforms, platform_name)
-            current_adapter = adapter_manager.get_adapter(platform_name)
-            
-            if cfg.enabled:
-                if current_adapter:
-                    # 如果已经运行，检查配置是否变更（这里简单处理为直接重启）
-                    logger.info(f"Platform {platform_name} config updated, reloading...")
-                    await adapter_manager.reload_adapter(platform_name, cfg.model_dump())
-                    new_adapter = adapter_manager.get_adapter(platform_name)
-                    if new_adapter:
-                        new_adapter.set_message_handler(_default_message_handler)
-                else:
-                    # 如果未运行且已开启，则启动
-                    logger.info(f"Platform {platform_name} enabled, loading...")
-                    await adapter_manager.load_adapter(platform_name, cfg.model_dump())
-                    new_adapter = adapter_manager.get_adapter(platform_name)
-                    if new_adapter:
-                        new_adapter.set_message_handler(_default_message_handler)
-            else:
-                if current_adapter:
-                    # 如果运行中但已关闭，则卸载
-                    logger.info(f"Platform {platform_name} disabled, unloading...")
-                    await adapter_manager.unload_adapter(platform_name)
-
-    def config_change_wrapper(new_settings: Settings):
-        # ConfigManager 的回调是同步的，我们需要在事件循环中运行异步任务
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(on_config_change(new_settings))
-        except Exception as e:
-            logger.error(f"Error triggering config change callback: {e}")
-
-    config_manager.on_change(config_change_wrapper)
-
-    # 启动 Agent 进程 (uos-ai-assistant)
-    from chatagentcore.core.process_manager import get_process_manager
-    process_manager = get_process_manager()
-    if not await process_manager.start():
-        logger.critical("无法启动关键组件 uos-ai-assistant，程序将退出。")
-        # 抛出 SystemExit 或直接退出，FastAPI 会捕获并停止
-        import os
-        os._exit(1)
-
-    # 同步有效的 API Token 到 WebSocket 管理器
-    ws_manager.set_valid_tokens([config_manager.config.auth.token])
-
-    # 启动清理过期连接的后台任务
-    async def prune_task():
-        while True:
-            try:
-                await asyncio.sleep(30)
-                count = await ws_manager.prune_stale_connections(timeout=90.0)
-                if count > 0:
-                    logger.info(f"Background task pruned {count} stale connections")
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in prune_task: {e}")
-
-    prune_job = asyncio.create_task(prune_task())
-
     logger.info("ChatAgentCore started successfully")
 
     yield
 
     # 关闭时执行
     logger.info("Shutting down ChatAgentCore...")
-    
-    # 停止 Agent 进程
-    from chatagentcore.core.process_manager import get_process_manager
-    await get_process_manager().stop()
-
-    prune_job.cancel()
     await event_bus.stop()
     await config_manager.stop_watch()
 
@@ -271,22 +157,6 @@ app.add_middleware(
 # 注册路由
 app.include_router(message_routes.router)
 app.include_router(webhook_routes.router)
-app.include_router(config_routes.router)
-
-# 挂载静态文件（管理后台）
-import sys
-if hasattr(sys, '_MEIPASS'):
-    # PyInstaller 打包后的临时路径
-    static_path = Path(sys._MEIPASS) / "static"
-else:
-    # 开发环境路径：项目根目录/static
-    static_path = Path(__file__).parent.parent.parent / "static"
-
-if not static_path.exists():
-    logger.warning(f"Static directory not found at {static_path}, creating empty one.")
-    static_path.mkdir(parents=True, exist_ok=True)
-
-app.mount("/admin", StaticFiles(directory=str(static_path), html=True), name="admin")
 
 # WebSocket 连接管理器
 ws_manager = get_manager()
@@ -325,23 +195,13 @@ async def websocket_events(websocket: WebSocket):
         while True:
             # 接收客户端消息
             data: dict = await websocket.receive_json()
-            ws_manager.update_last_seen(websocket)
             msg_type = data.get("type")
 
             if msg_type == "auth":
                 # 处理认证
+                from chatagentcore.api.models.message import WSAuthMessage
                 auth_msg = WSAuthMessage(**data)
                 await ws_manager.handle_auth(websocket, auth_msg)
-
-            elif msg_type == "ping":
-                # 处理 Ping 并返回 Pong
-                pong_msg = WSMessage(
-                    type="pong",
-                    channel="system",
-                    timestamp=int(time.time()),
-                    payload={"ping_timestamp": data.get("timestamp")}
-                )
-                await ws_manager.send_json(websocket, pong_msg)
 
             elif msg_type == "subscribe":
                 # 处理订阅

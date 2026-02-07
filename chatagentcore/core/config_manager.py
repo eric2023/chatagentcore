@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
 import yaml
@@ -21,8 +20,6 @@ class ConfigManager:
             config_path: 配置文件路径
         """
         self.config_path = Path(config_path)
-        # uos-ai 预设的配置文件路径
-        self.uos_ai_config_path = Path(os.path.expanduser("~/.config/deepin/uos-ai-assistant/chatagentcore.yaml"))
         self.version: int = 0
         self._config: Settings | None = None
         self._raw_config: Dict[str, Any] = {}
@@ -33,142 +30,195 @@ class ConfigManager:
     def load(self) -> Settings:
         """
         加载配置文件
+
+        Returns:
+            配置对象
+
+        Raises:
+            FileNotFoundError: 配置文件不存在
+            yaml.YAMLError: YAML 解析错误
+            ValueError: 配置验证失败
         """
-        # 1. 确保服务自身配置目录存在
-        if not self.config_path.parent.exists():
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 2. 加载或创建服务配置
         if not self.config_path.exists():
-            logger.warning(f"Config file not found: {self.config_path}, creating default config")
+            logger.warning(f"Config file not found: {self.config_path}, using defaults")
             self._config = Settings()
-            # 设置初始默认 Token
-            self._config.auth.token = "uos-ai-assistant-internal-token"
-            self._save_to_file(self._config.model_dump())
-            self._raw_config = self._config.model_dump()
-        else:
-            logger.info(f"Loading config from: {self.config_path}")
-            with open(self.config_path, "r", encoding="utf-8") as f:
-                self._raw_config = yaml.safe_load(f) or {}
-            self._config = Settings.model_validate(self._raw_config)
+            self._raw_config = {}
+            return self._config
 
-        # 3. 强制在 uos-ai 指定路径同步配置文件
-        self._sync_to_uos_ai_path()
+        logger.info(f"Loading config from: {self.config_path}")
 
+        with open(self.config_path, "r", encoding="utf-8") as f:
+            self._raw_config = yaml.safe_load(f) or {}
+
+        # 构建 Pydantic Settings 对象
+        self._config = self._raw_config_to_settings(self._raw_config)
+
+        # 验证配置
         self._validate_config(self._config)
-        
-        # 确保日志目录存在
-        log_file = Path(self._config.logging.file)
-        if not log_file.parent.exists():
-            log_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.version += 1
+        logger.info(f"Config loaded successfully (v{self.version})")
         return self._config
 
-    def _sync_to_uos_ai_path(self):
-        """同步配置到 uos-ai 指定的 ~/.config/... 路径"""
-        try:
-            if not self.uos_ai_config_path.parent.exists():
-                self.uos_ai_config_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # 构造 uos-ai 需要的具体内容
-            uos_config = {
-                "server": {
-                    "host": "localhost",
-                    "port": self._config.server.port,
-                    "debug": self._config.server.debug
-                },
-                "auth": {
-                    "type": "fixed_token",
-                    "token": self._config.auth.token
-                }
-            }
-            
-            with open(self.uos_ai_config_path, "w", encoding="utf-8") as f:
-                yaml.dump(uos_config, f, allow_unicode=True, sort_keys=False)
-            
-            logger.info(f"已同步配置文件至 uos-ai 路径: {self.uos_ai_config_path}")
-        except Exception as e:
-            logger.error(f"同步 uos-ai 配置文件失败: {e}")
-
-    def _save_to_file(self, config_dict: Dict[str, Any]) -> None:
-        """内部方法：将字典保存到 YAML 文件"""
-        try:
-            with open(self.config_path, "w", encoding="utf-8") as f:
-                yaml.dump(config_dict, f, allow_unicode=True, sort_keys=False)
-        except Exception as e:
-            logger.error(f"Failed to save config: {e}")
-
     def reload(self) -> Settings:
-        """重新加载配置"""
+        """
+        重新加载配置
+
+        Returns:
+            更新后的配置对象
+        """
         logger.info("Reloading config...")
-        old_raw = json.dumps(self._raw_config, sort_keys=True)
-        try:
-            self.load()
-            new_raw = json.dumps(self._raw_config, sort_keys=True)
-            if old_raw != new_raw:
-                logger.info("Config content changed, triggering callbacks")
-                for callback in self._callbacks:
-                    try: callback(self._config)
-                    except Exception as e: logger.error(f"Error in config callback: {e}")
-        except Exception as e:
-            logger.error(f"Reload failed: {e}")
+        old_config = self._config
+        self.load()
+
+        # 触发回调通知配置变更
+        for callback in self._callbacks:
+            try:
+                callback(self._config)
+            except Exception as e:
+                logger.error(f"Error in config callback: {e}")
+
+        if old_config != self._config:
+            logger.info("Config changed")
+        else:
+            logger.info("Config unchanged")
+
         return self._config
 
     async def watch(self, interval: float = 5.0) -> None:
+        """
+        监控配置文件变化并自动重载
+
+        Args:
+            interval: 检查间隔（秒）
+        """
         self._reload_interval = interval
         self._reload_task = asyncio.create_task(self._watch_loop())
         logger.info(f"Config watch task started (interval: {interval}s)")
 
     async def stop_watch(self) -> None:
+        """停止监控"""
         if self._reload_task:
             self._reload_task.cancel()
-            try: await self._reload_task
-            except asyncio.CancelledError: pass
+            try:
+                await self._reload_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Config watch task stopped")
 
     def on_change(self, callback: Callable[[Settings], None]) -> None:
+        """
+        注册配置变更回调
+
+        Args:
+            callback: 回调函数，接收新的 Settings 对象
+        """
         self._callbacks.append(callback)
 
     @property
     def config(self) -> Settings:
-        if self._config is None: raise RuntimeError("Config not loaded.")
+        """
+        获取当前配置
+
+        Returns:
+            配置对象
+
+        Raises:
+            RuntimeError: 配置未加载
+        """
+        if self._config is None:
+            raise RuntimeError("Config not loaded. Call load() first.")
         return self._config
 
     @property
     def platforms(self) -> PlatformsConfig:
+        """获取平台配置"""
         return self.config.platforms
 
+    def _raw_config_to_settings(self, raw: Dict[str, Any]) -> Settings:
+        """将原始配置字典转换为 Settings 对象"""
+        # 这里可以根据需要实现更复杂的转换逻辑
+        return Settings.model_validate(raw)
+
     def _validate_config(self, config: Settings) -> None:
-        enabled_platforms = [n for n, p in [("feishu", config.platforms.feishu), ("wecom", config.platforms.wecom), 
-                            ("dingtalk", config.platforms.dingtalk), ("qq", config.platforms.qq)] if p.enabled]
+        """验证配置"""
+        # 检查是否至少启用了一个平台
+        enabled_platforms = [
+            name for name, platform in [
+                ("feishu", config.platforms.feishu),
+                ("wecom", config.platforms.wecom),
+                ("dingtalk", config.platforms.dingtalk),
+            ]
+            if platform.enabled
+        ]
+
+        if not enabled_platforms:
+            logger.warning("No platform enabled")
+
+        # 检查认证配置
+        if config.auth.type == "fixed_token" and not config.auth.token:
+            logger.warning("auth.token is required when auth.type is fixed_token")
+
+        if config.auth.type == "jwt" and not config.auth.jwt_secret:
+            logger.warning("auth.jwt_secret is required when auth.type is jwt")
+
         logger.info(f"Enabled platforms: {enabled_platforms or 'None'}")
 
     async def _watch_loop(self) -> None:
-        if not self.config_path.exists(): return
+        """监控循环"""
+        if not self.config_path.exists():
+            logger.warning(f"Config file not found: {self.config_path}")
+            return
+
         last_mtime = self.config_path.stat().st_mtime
+
         try:
             while True:
                 await asyncio.sleep(self._reload_interval)
-                if not self.config_path.exists(): break
+
+                if not self.config_path.exists():
+                    logger.warning(f"Config file disappeared: {self.config_path}")
+                    break
+
                 current_mtime = self.config_path.stat().st_mtime
                 if current_mtime != last_mtime:
-                    self.reload()
-                    last_mtime = current_mtime
-        except asyncio.CancelledError: pass
+                    logger.info("Config file changed, reloading...")
+                    try:
+                        self.reload()
+                        last_mtime = current_mtime
+                    except Exception as e:
+                        logger.error(f"Failed to reload config: {e}")
+        except asyncio.CancelledError:
+            # 正常退出
+            pass
 
     def to_dict(self) -> Dict[str, Any]:
-        return self._config.model_dump() if self._config else {}
+        """
+        将配置转为字典
+
+        Returns:
+            配置字典
+        """
+        if self._config is None:
+            return {}
+        return self._config.model_dump()
 
 
+# 全局配置管理器实例
 _config_manager: ConfigManager | None = None
 
+
 def get_config_manager(config_path: str = "config/config.yaml") -> ConfigManager:
+    """获取全局配置管理器实例"""
     global _config_manager
     if _config_manager is None:
         _config_manager = ConfigManager(config_path)
     return _config_manager
 
+
 def get_config() -> Settings:
+    """获取当前配置（快捷方式）"""
     return get_config_manager().config
+
 
 __all__ = ["ConfigManager", "get_config_manager", "get_config"]

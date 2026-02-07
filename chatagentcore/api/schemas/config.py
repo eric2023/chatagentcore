@@ -9,12 +9,20 @@ class AuthConfig(BaseModel):
     """认证配置"""
 
     type: Literal["fixed_token", "jwt"] = Field(default="fixed_token", description="认证类型")
-    token: str = Field(default="uos-ai-assistant-internal-token", description="固定内部认证 Token")
+    token: str = Field(default="", description="固定 API Token（当 type=fixed_token 时使用）")
 
     # JWT 配置（当 type=jwt 时使用）
     jwt_secret: str = Field(default="", description="JWT 密钥")
     jwt_algorithm: str = Field(default="HS256", description="JWT 算法")
     jwt_expire_hours: int = Field(default=24, description="JWT 过期时间（小时）")
+
+    @field_validator("token")
+    @classmethod
+    def validate_fixed_token(cls, v: str, info) -> str:
+        """验证固定 Token"""
+        if info.data.get("type") == "fixed_token" and not v:
+            raise ValueError("token is required when type is fixed_token")
+        return v
 
 
 class LoggingConfig(BaseModel):
@@ -73,33 +81,15 @@ class WecomConfig(PlatformConfig):
 class DingTalkConfig(PlatformConfig):
     """钉钉配置"""
 
-    app_key: str = Field(default="", description="应用 Key (Client ID)")
-    app_secret: str = Field(default="", description="应用密钥 (Client Secret)")
-    connection_mode: Literal["websocket", "webhook"] = Field(default="websocket", description="连接模式：websocket(推荐) | webhook")
-    
-    # 以下用于 Webhook 模式，Stream 模式不需要
+    app_key: str = Field(default="", description="应用 Key")
+    app_secret: str = Field(default="", description="应用密钥")
     token: str = Field(default="", description="令牌")
     aes_key: str = Field(default="", description="AES 密钥")
 
-    @field_validator("app_key", "app_secret")
+    @field_validator("app_key", "app_secret", "token", "aes_key")
     @classmethod
     def validate_dingtalk_keys(cls, v: str, info) -> str:
         """验证钉钉配置"""
-        if info.data.get("enabled") and not v:
-            raise ValueError(f"{info.field_name} is required when platform is enabled")
-        return v
-
-
-class QQConfig(PlatformConfig):
-    """QQ 机器人配置"""
-
-    app_id: str = Field(default="", description="机器人 AppID")
-    token: str = Field(default="", description="机器人 Token (AppSecret)")
-    
-    @field_validator("app_id", "token")
-    @classmethod
-    def validate_qq_keys(cls, v: str, info) -> str:
-        """验证 QQ 配置"""
         if info.data.get("enabled") and not v:
             raise ValueError(f"{info.field_name} is required when platform is enabled")
         return v
@@ -111,7 +101,6 @@ class PlatformsConfig(BaseModel):
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
     wecom: WecomConfig = Field(default_factory=WecomConfig)
     dingtalk: DingTalkConfig = Field(default_factory=DingTalkConfig)
-    qq: QQConfig = Field(default_factory=QQConfig)
 
 
 class ServerConfig(BaseModel):
@@ -151,5 +140,4 @@ __all__ = [
     "FeishuConfig",
     "WecomConfig",
     "DingTalkConfig",
-    "QQConfig",
 ]
