@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "chatagentcore"
 version = "0.1.0"
-description = "ChatAgent Core - 中间服务程序，支持飞书、企业微信、钉钉接入"
+description = "ChatAgent Core - 中间服务程序，支持飞书、企业微信、钉钉、微信接入"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
 authors = [
     {name = "ChatAgent Team"}
 ]
-keywords = ["chatbot", "feishu", "wecom", "dingtalk", "middleware"]
+keywords = ["chatbot", "feishu", "wecom", "dingtalk", "weixin", "middleware"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -51,6 +51,9 @@ feishu = [
 ]
 dingtalk = [
     "dingtalk-stream>=1.0.0",
+]
+weixin = [
+    # 微信适配器需要的依赖（已在主依赖中，此为兼容）
 ]
 
 

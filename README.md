@@ -7,8 +7,10 @@
 ChatAgentCore 是一个中间服务程序，作为 Qt AI 应用与国内主流聊天软件之间的桥接中间件，支持多平台并发交互，配置驱动，提供统一的通用接口规范。
 
 **核心功能：**
-- 支持飞书、企业微信、钉钉三大平台接入
-- 使用官方 SDK **WebSocket 长连接**方式收发消息，无需公网 IP
+- ✅ 飞书：支持 WebSocket 长连接方式收发消息
+- ✅ 微信：支持 HTTP JSON API 长轮询方式接入，完整对话能力
+- 🔧 钉钉：适配器待完善
+- 🔧 企业微信：适配器待开发
 - 提供模块化的消息处理和路由组件
 - 实现 HTTP API 接口
 - 支持动态配置管理
@@ -64,7 +66,50 @@ uvicorn.run(app, host='0.0.0.0', port=8000)
 ```bash
 # 启动交互式飞书测试工具
 python cli/test_feishu_ws.py
+
+# 微信扫码登录测试
+python cli/test_weixin.py login
+
+# 微信接收消息测试（默认 60 秒）
+python cli/test_weixin.py receive --duration 120
+
+# 微信发送消息测试
+python cli/test_weixin.py send --to "xxx@im.wechat" --text "你好，世界！"
 ```
+
+### 测试工具
+
+```bash
+# 启动交互式飞书测试工具
+python cli/test_feishu_ws.py
+```
+
+---
+
+## 微信接入详细说明
+
+### 扫码登录
+
+微信适配器支持通过扫码方式登录，无需申请应用。
+
+```bash
+# 使用测试工具扫码登录
+python cli/test_weixin.py login
+```
+
+### 配置示例
+
+```yaml
+platforms:
+  weixin:
+    enabled: true                    # 是否启用
+    account_id: "default"            # 账号标识
+    base_url: "https://ilinkai.weixin.qq.com"  # API 基础 URL
+    cdn_base_url: "https://novac2c.cdn.weixin.qq.com/c2c"  # CDN 基础 URL
+    state_dir: "~/.openclaw-weixin"   # 状态目录
+```
+
+详细文档请参考：[微信适配器文档](docs/adapters/weixin.md)
 
 ---
 
@@ -206,13 +251,20 @@ curl -X POST "http://localhost:8000/api/v1/message/send" \
 chatagentcore/
 ├── core/                  # 核心服务层
 ├── adapters/              # 平台适配层
-│   ├── feishu/            # 飞书适配器
-│   ├── wecom/             # 企业微信适配器（待开发）
-│   └── dingtalk/          # 钉钉适配器（待开发）
+│   ├── base.py            # 适配器基类
+│   ├── feishu/            # ✅ 飞书适配器
+│   ├── weixin/            # ✅ 微信适配器
+│   ├── dingtalk/          # 🔧 钉钉适配器（待完善）
+│   └── qq/                # 🔧 QQ 适配器
 ├── api/                   # 接口层
 ├── cli/                   # 命令行工具
+│   ├── test_feishu_ws.py  # 飞书测试工具
+│   ├── test_qq_ws.py      # QQ 测试工具
+│   └── test_weixin.py     # 微信测试工具
 ├── config/                # 配置文件
 ├── docs/                  # 技术文档
+│   └── adapters/          # 适配器详细文档
+│       └── weixin.md      # 微信适配器文档
 └── tasks/                 # 任务和计划跟踪
 ```
 
@@ -222,6 +274,7 @@ chatagentcore/
 
 | 日期 | 变更内容 |
 |------|----------|
+| 2026-03-23 | ✅ 实现微信适配器 - 支持扫码登录、消息收发、媒体上传、AES加密、完整对话能力 |
 | 2026-02-05 | ✅ 实现飞书 WebSocket 长连接及双向对话 |
 
 ---
