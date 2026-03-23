@@ -35,6 +35,16 @@ platforms:
     connection_mode: "websocket"                     # 连接模式：websocket (推荐，无需公网IP) | webhook (需要公网IP)
     domain: "feishu"                                  # 域名：feishu (国内) | lark (海外)
 
+  # >>> 微信配置（iLink AI）<<<
+  # 接入方式：HTTP JSON API 长轮询
+  weixin:
+    enabled: false                                   # 是否启用微信适配器
+    account_id: "default"                            # 账号标识（用于多账号区分）
+    base_url: "https://ilinkai.weixin.qq.com"        # API 基础 URL
+    cdn_base_url: "https://novac2c.cdn.weixin.qq.com/c2c"  # CDN 基础 URL
+    state_dir: "~/.openclaw-weixin"                  # 状态目录（Token 和会话缓存）
+    token: ""                                        # Bot Token（可选，扫码登录后自动保存）
+
   # >>> 企业微信配置（第二阶段）<<<
   # 接入方式：SDK 长连接订阅事件（待实现）
   wecom:
@@ -93,6 +103,28 @@ platforms:
 #
 # 7. 验证配置：
 #    python cli/test_feishu_ws.py
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# 微信平台接入步骤：
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 1. 启用微信适配器：
+#    - 在配置文件中将 weixin.enabled 设置为 true
+#    - 指定 state_dir 状态目录路径
+#
+# 2. 扫码登录：
+#    - 运行登录命令：python cli/test_weixin.py login
+#    - 按提示使用微信扫描二维码
+#    - 登录成功后 Token 会自动保存到 state_dir 目录
+#
+# 3. 接收消息测试：
+#    - 运行接收命令：python cli/test_weixin.py receive --duration 60
+#    - 在微信中发送消息给机器人，观察控制台输出
+#
+# 4. 发送消息测试：
+#    - 运行发送命令：python cli/test_weixin.py send --to "xxx@im.wechat" --text "你好"
+#
+# 5. 详细文档：
+#    - 参考 docs/adapters/weixin.md
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #
 # 相关文档：
