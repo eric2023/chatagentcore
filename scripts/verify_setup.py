@@ -18,9 +18,9 @@ def check_python_version():
     """检查 Python 版本"""
     version = sys.version_info
     if version.major == 3 and version.minor >= 10:
-        return True, f"Python {version.major}.{version.minor}.{version.micro} ✅"
+        return True, f"Python {version.major}.{version.minor}.{version.micro} OK"
     else:
-        return False, f"Python {version.major}.{version.minor}.{version.micro} ❌ (需要 >= 3.10)"
+        return False, f"Python {version.major}.{version.minor}.{version.micro} (need >= 3.10)"
 
 
 def check_dependencies():
@@ -29,7 +29,7 @@ def check_dependencies():
         "fastapi",
         "uvicorn",
         "pydantic",
-        "pyyaml",
+        "yaml",                   # 改为 yaml，因为标准库中模块名为 yaml
         "loguru",
         "httpx",
         "lark_oapi",
@@ -43,9 +43,9 @@ def check_dependencies():
     for module in required:
         try:
             __import__(module)
-            results.append((True, f"{module} ✅"))
+            results.append((True, f"{module} OK"))
         except ImportError:
-            results.append((False, f"{module} ❌ 未安装"))
+            results.append((False, f"{module} NOT installed"))
             all_ok = False
 
     return all_ok, results
@@ -55,12 +55,12 @@ def check_config_file():
     """检查配置文件"""
     config_path = Path("config/config.yaml")
     if config_path.exists():
-        return True, f"配置文件存在: {config_path} ✅"
+        return True, f"Config file exists: {config_path} OK"
     else:
         example_path = Path("config/config.yaml.example")
         if example_path.exists():
-            return False, f"配置文件不存在 ❌ (但存在示例: {example_path})"
-        return False, f"配置文件不存在: {config_path} ❌"
+            return False, f"Config file NOT exists (but example: {example_path})"
+        return False, f"Config file NOT exists: {config_path}"
 
 
 def check_directory_structure():
@@ -69,7 +69,7 @@ def check_directory_structure():
         "chatagentcore/core",
         "chatagentcore/adapters",
         "chatagentcore/api",
-        "chatagentcore/cli",
+        "cli",                    # 修复：cli 在根目录，不在 chatagentcore 下
         "config",
         "tests",
     ]
@@ -80,9 +80,9 @@ def check_directory_structure():
     for dir_path in required_dirs:
         path = Path(dir_path)
         if path.exists():
-            results.append((True, f"{dir_path} ✅"))
+            results.append((True, f"{dir_path} OK"))
         else:
-            results.append((False, f"{dir_path} ❌ 不存在"))
+            results.append((False, f"{dir_path} NOT exists"))
             all_ok = False
 
     return all_ok, results
@@ -101,9 +101,9 @@ def check_cli_scripts():
     for script in required_scripts:
         path = Path(script)
         if path.exists():
-            results.append((True, f"{script} ✅"))
+            results.append((True, f"{script} OK"))
         else:
-            results.append((False, f"{script} ❌ 不存在"))
+            results.append((False, f"{script} NOT exists"))
             all_ok = False
 
     return all_ok, results
@@ -112,37 +112,37 @@ def check_cli_scripts():
 def main():
     """主函数"""
     print("=" * 70)
-    print("ChatAgentCore 环境验证")
+    print("ChatAgentCore Environment Verification")
     print("=" * 70)
 
     all_checks_pass = True
 
     # 检查 Python 版本
-    print("\n[1/5] Python 版本检查")
+    print("\n[1/5] Python Version Check")
     python_ok, python_msg = check_python_version()
     print(f"  {python_msg}")
     if not python_ok:
         all_checks_pass = False
 
     # 检查依赖
-    print("\n[2/5] 依赖包检查")
+    print("\n[2/5] Dependencies Check")
     deps_ok, deps_results = check_dependencies()
     for ok, msg in deps_results:
         print(f"  {msg}")
     if not deps_ok:
-        print(f"  💡 安装命令: pip install -r requirements.txt")
+        print(f"  Install command: pip install -r requirements.txt")
         all_checks_pass = False
 
     # 检查配置文件
-    print("\n[3/5] 配置文件检查")
+    print("\n[3/5] Config File Check")
     config_ok, config_msg = check_config_file()
     print(f"  {config_msg}")
     if not config_ok:
-        print(f"  💡 复制命令: cp config/config.yaml.example config/config.yaml")
+        print(f"  Copy command: cp config/config.yaml.example config/config.yaml")
         all_checks_pass = False
 
     # 检查目录结构
-    print("\n[4/5] 目录结构检查")
+    print("\n[4/5] Directory Structure Check")
     dirs_ok, dirs_results = check_directory_structure()
     for ok, msg in dirs_results:
         print(f"  {msg}")
@@ -150,7 +150,7 @@ def main():
         all_checks_pass = False
 
     # 检查 CLI 脚本
-    print("\n[5/5] CLI 测试脚本检查")
+    print("\n[5/5] CLI Test Scripts Check")
     cli_ok, cli_results = check_cli_scripts()
     for ok, msg in cli_results:
         print(f"  {msg}")
@@ -160,13 +160,13 @@ def main():
     # 总结
     print("\n" + "=" * 70)
     if all_checks_pass:
-        print("✅ 环境验证通过！可以开始使用 ChatAgentCore")
-        print("\n快速开始：")
-        print("  1. 配置文件: 编辑 config/config.yaml")
-        print("  2. 启动服务: python main.py")
-        print("  3. 测试工具: python cli/test_feishu_ws.py")
+        print("Environment verification passed! Ready to use ChatAgentCore")
+        print("\nQuick Start:")
+        print("  1. Edit config: config/config.yaml")
+        print("  2. Start service: python main.py")
+        print("  3. Test tool: python cli/test_feishu_ws.py")
     else:
-        print("❌ 环境验证失败！请按照上述提示修复问题")
+        print("Environment verification failed! Please fix issues above")
     print("=" * 70)
 
     return 0 if all_checks_pass else 1

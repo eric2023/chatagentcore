@@ -15,16 +15,20 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 
 # 打印带颜色的消息
+print_header() {
+    echo -e "${GREEN}*** $1 ***${NC}"
+}
+
 print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
+    echo -e "${GREEN}[OK] $1${NC}"
 }
 
 print_error() {
-    echo -e "${RED}❌ $1${NC}"
+    echo -e "${RED}[X] $1${NC}"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
+    echo -e "${YELLOW}[!] $1${NC}"
 }
 
 print_section() {
@@ -40,7 +44,7 @@ test_verify_setup() {
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
     print_section "1. 环境验证"
-    if python scripts/verify_setup.py; then
+    if python3 scripts/verify_setup.py; then
         print_success "$name"
         TEST_RESULTS+=("$name: 通过")
         PASSED_TESTS=$((PASSED_TESTS + 1))
@@ -60,9 +64,9 @@ test_feishu() {
     print_section "2. 飞书适配器测试"
 
     # 检查是否启用
-    if python -c "import yaml; config = yaml.safe_load(open('config/config.yaml')); print(config['platforms']['feishu']['enabled'])" 2>/dev/null | grep -q "True"; then
+    if python3 -c "import yaml; config = yaml.safe_load(open('config/config.yaml')); print(config['platforms']['feishu']['enabled'])" 2>/dev/null | grep -q "True"; then
         print_warning "飞书测试需要人工交互，跳过自动测试"
-        print_warning "手动测试: python cli/test_feishu_ws.py"
+        print_warning "手动测试: python3 cli/test_feishu_ws.py"
         TEST_RESULTS+=("$name: 跳过 (需要人工交互)")
         return 0
     else
@@ -79,15 +83,15 @@ test_weixin_login() {
     print_section "3. 微信适配器测试"
 
     # 检查是否启用
-    if ! python -c "import yaml; config = yaml.safe_load(open('config/config.yaml')); print(config['platforms'].get('weixin', {}).get('enabled', False))" 2>/dev/null | grep -q "True"; then
+    if ! python3 -c "import yaml; config = yaml.safe_load(open('config/config.yaml')); print(config['platforms'].get('weixin', {}).get('enabled', False))" 2>/dev/null | grep -q "True"; then
         print_warning "微信平台未启用，跳过测试"
         TEST_RESULTS+=("$name: 跳过 (未启用)")
         return 0
     fi
 
     print_warning "微信测试需要人工交互，跳过自动测试"
-    print_warning "手动测试: python cli/test_weixin.py login"
-    print_warning "手动测试: python cli/test_weixin.py receive --duration 60"
+    print_warning "手动测试: python3 cli/test_weixin.py login"
+    print_warning "手动测试: python3 cli/test_weixin.py receive --duration 60"
     TEST_RESULTS+=("$name: 跳过 (需要人工交互)")
     return 0
 }
@@ -106,7 +110,7 @@ test_health_check() {
         return 0
     else
         print_warning "服务未运行，无法进行健康检查"
-        print_warning "启动服务: python main.py"
+        print_warning "启动服务: python3 main.py"
         TEST_RESULTS+=("$name: 跳过 (服务未运行)")
         return 0
     fi
