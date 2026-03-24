@@ -4,14 +4,17 @@
 """
 
 import asyncio
+from pathlib import Path
 import sys
 import os
 
 # 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chatagentcore.adapters.weixin import WeixinAdapter
 from loguru import logger
+logger.remove()
+logger.add(sys.stdout, level="DEBUG", format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>")
 
 
 class WeixinTestTool:
@@ -29,11 +32,12 @@ class WeixinTestTool:
 
         self.adapter = WeixinAdapter(config)
         self._message_count = 0
+        self.last_sender_id = None
 
         # 设置消息处理器
         self.adapter.set_message_handler(self._handle_message)
 
-    async def test_login(self):
+    async def test_login(self, continue_chat=True):
         """测试扫码登录"""
         print("\n" + "=" * 60)
         print("微信适配器 - 扫码登录测试")
@@ -50,6 +54,11 @@ class WeixinTestTool:
                 print(f"用户 ID: {result.get('user_id')}")
                 print(f"Token: {result.get('bot_token')}")
                 print("=" * 60 + "\n")
+
+                # 登录成功后进入交互式对话模式
+                if continue_chat:
+                    print("\n进入交互式对话模式，输入消息回复，Ctrl+C 退出\n")
+                    await self.test_interactive_chat()
             else:
                 print("\n" + "=" * 60)
                 print("❌ 登录失败")
@@ -63,13 +72,88 @@ class WeixinTestTool:
     def _handle_message(self, message):
         """处理接收到的消息"""
         self._message_count += 1
+
+        # 更新最后一个发送者 ID，用于快速回复
+        sender_id = message.sender.get("id", "")
+        if sender_id:
+            self.last_sender_id = sender_id
+
         print(f"\n📨 收到消息 #{self._message_count}:")
         print(f"   平台: {message.platform}")
         print(f"   消息ID: {message.message_id}")
-        print(f"   发送者: {message.sender['id']}")
+        print(f"   发送者: {sender_id}")
         print(f"   时间: {message.timestamp}")
-        print(f"   内容: {message.content}")
+
+        # 处理消息内容
+        content = message.content
+        if isinstance(content, dict):
+            content_type = content.get("type", "")
+            content_text = content.get("text", "")
+            has_media = content.get("has_media", False)
+            print(f"   类型: {content_type}")
+            print(f"   内容: {content_text}")
+            if has_media:
+                print(f"   媒体: 是")
+        else:
+            print(f"   内容: {content}")
         print()
+
+    async def test_interactive_chat(self):
+        """交互式对话模式 - 接收消息并支持回复"""
+        print("=" * 60)
+        print("交互式对话模式已启动")
+        print("=" * 60)
+        print("命令格式: to:用户ID 消息内容")
+        print("示例: to:wxid_xxxxx 你好")
+        print("或者直接输入内容回复最后一条消息的发送者")
+        print("按 Ctrl+C 退出")
+        print("=" * 60 + "\n")
+
+        # 等待用户输入
+        try:
+            loop = asyncio.get_running_loop()
+            while True:
+                try:
+                    # 等待用户输入
+                    user_input = await loop.run_in_executor(None, input, "> ")
+                    user_input = user_input.strip()
+
+                    if not user_input:
+                        continue
+
+                    # 解析用户输入
+                    if user_input.startswith("to:"):
+                        # 格式: to:用户ID 消息内容
+                        parts = user_input[3:].split(None, 1)
+                        if len(parts) >= 2:
+                            to_user_id = parts[0]
+                            text = parts[1]
+                            try:
+                                await self.adapter.send_text_message(to_user_id, text)
+                                print(f"✅ 已发送给 {to_user_id}: {text}\n")
+                            except Exception as e:
+                                print(f"❌ 发送失败: {e}\n")
+                        else:
+                            print("❌ 格式错误，请使用: to:用户ID 消息内容\n")
+                    else:
+                        # 简单回复：发送给最后一个发送者
+                        if self.last_sender_id:
+                            try:
+                                await self.adapter.send_text_message(self.last_sender_id, user_input)
+                                print(f"✅ 已发送给 {self.last_sender_id}: {user_input}\n")
+                            except Exception as e:
+                                print(f"❌ 发送失败: {e}\n")
+                        else:
+                            print("❌ 没有可回复的目标，请先接收消息或使用 to: 格式\n")
+
+                except EOFError:
+                    # 输入流关闭，退出
+                    break
+                except KeyboardInterrupt:
+                    break
+
+        except KeyboardInterrupt:
+            print("\n\n")
 
     async def test_long_poll(self, duration_seconds=60):
         """测试长轮询接收消息"""
@@ -113,7 +197,10 @@ class WeixinTestTool:
     async def cleanup(self):
         """清理资源"""
         print("\n正在清理资源...")
-        await self.adapter.shutdown()
+        try:
+            await self.adapter.shutdown()
+        except Exception as e:
+            print(f"清理时出现警告: {e}")
         print("清理完成\n")
 
 

@@ -37,25 +37,12 @@ def generate_qrcode(qrcode_url: str) -> str:
 def display_qrcode_terminal(qrcode_url: str) -> None:
     """在终端显示二维码
 
-    优先使用 qrcode-terminal 库，否则显示 URL。
+    优先使用 qrcode 库生成 ASCII 码，否则显示 URL。
 
     Args:
         qrcode_url: 二维码内容 URL
     """
-    # 方法 1: 使用 qrcode-terminal 库（推荐）
-    try:
-        import qrcode_terminal
-        print("\n请使用微信扫描以下二维码完成登录：")
-        print("-" * 50)
-        qrcode_terminal.generate(qrcode_url)
-        print("-" * 50)
-        print()
-        return
-
-    except ImportError:
-        pass
-
-    # 方法 2: 使用 qrcode 库生成 ASCII 码
+    # 方法 1: 使用 qrcode 库生成 ASCII 码（推荐）
     try:
         import qrcode
         qr = qrcode.QRCode(version=1, box_size=1, border=1)
@@ -70,7 +57,25 @@ def display_qrcode_terminal(qrcode_url: str) -> None:
         print()
         return
 
-    except ImportError:
+    except Exception as e:
+        # ASCII 显示失败，继续尝试其他方法
+        pass
+
+    # 方法 2: 尝试使用 qrcode-terminal（不同版本 API 不同）
+    try:
+        import qrcode_terminal
+        print("\n请使用微信扫描以下二维码完成登录：")
+        print("-" * 50)
+        # 新版本使用 qrcode_terminal.qrcode()
+        if hasattr(qrcode_terminal, 'qrcode'):
+            qrcode_terminal.qrcode(qrcode_url)
+        else:
+            # 旧版本可能使用其他方法
+            print(f"二维码 URL: {qrcode_url}")
+        print("-" * 50)
+        print()
+        return
+    except Exception:
         pass
 
     # 方法 3: 直接显示 URL（回退方案）

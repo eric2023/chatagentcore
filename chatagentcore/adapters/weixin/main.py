@@ -13,6 +13,7 @@
 """
 
 import asyncio
+import time
 from typing import Any, Callable, Optional, Dict
 
 from loguru import logger
@@ -144,16 +145,26 @@ class WeixinAdapter(BaseAdapter):
             self._long_poll_task.cancel()
             try:
                 await self._long_poll_task
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, Exception):
+                # 忽略取消错误和任何其他异常，确保关闭流程继续
                 pass
 
         # 关闭 API 客户端
         if self.auth_api:
-            await self.auth_api.close()
+            try:
+                await self.auth_api.close()
+            except Exception:
+                pass
         if self.messaging_api:
-            await self.messaging_api.close()
+            try:
+                await self.messaging_api.close()
+            except Exception:
+                pass
         if self.media_api:
-            await self.media_api.close()
+            try:
+                await self.media_api.close()
+            except Exception:
+                pass
 
         logger.info("微信适配器已关闭")
 
@@ -278,11 +289,14 @@ class WeixinAdapter(BaseAdapter):
             raise Exception("微信适配器未初始化，请先登录")
 
         # 获取 context_token
+        logger.debug(f"查找 context_token: to={to}, 缓存大小={self.context_cache.size()}")
+        logger.debug(f"缓存信息: {self.context_cache.info()}")
         context_token = self.context_cache.get(to)
         if not context_token:
             raise Exception(
                 f"未找到上下文令牌，请先接收来自 {to} 的消息（会话未建立）"
             )
+        logger.info(f"找到 context_token: to={to}, token={context_token[:20]}...")
 
         # 处理不同的消息类型
         if message_type == "text":
@@ -402,9 +416,7 @@ class WeixinAdapter(BaseAdapter):
         while self._running:
             # 检查会话是否暂停
             if time.time() * 1000 < self._session_paused_until:
-                import time as _time
-
-                wait_ms = self._session_paused_until - _time.time() * 1000
+                wait_ms = self._session_paused_until - time.time() * 1000
                 logger.debug(f"会话已暂停，等待 {wait_ms/1000:.0f} 秒")
                 await asyncio.sleep(min(5, wait_ms / 1000))
                 continue
@@ -421,9 +433,7 @@ class WeixinAdapter(BaseAdapter):
                 # 检查会话过期
                 if self.messaging_api.is_session_expired(resp):
                     logger.warning("会话已过期，暂停 5 分钟")
-                    import time as _time
-
-                    self._session_paused_until = _time.time() * 1000 + SESSION_PAUSE_MS
+                    self._session_paused_until = time.time() * 1000 + SESSION_PAUSE_MS
                     continue
 
                 # 检查 API 错误
@@ -446,6 +456,7 @@ class WeixinAdapter(BaseAdapter):
 
                 # 处理消息
                 if resp.msgs:
+                    logger.info(f"收到 {len(resp.msgs)} 条消息")
                     for wx_msg in resp.msgs:
                         await self._handle_message(wx_msg)
 
@@ -464,6 +475,8 @@ class WeixinAdapter(BaseAdapter):
 
     async def _handle_message(self, wx_msg: WeixinMessage):
         """处理单条微信消息"""
+        logger.debug(f"收到原始消息: {wx_msg}")
+
         # 提取文本内容
         text = ""
         has_media = False
@@ -477,11 +490,15 @@ class WeixinAdapter(BaseAdapter):
                     has_media = True
                     media_info["type"] = item.type
 
-        # 缓存 context_token
-        if wx_msg.to_user_id and wx_msg.context_token:
+        logger.info(f"处理消息: from={wx_msg.from_user_id}, to={wx_msg.to_user_id}, text={text[:50] if text else '(empty)'}")
+
+        # 缓存 context_token - 使用 from_user_id（发送者）作为键
+        # 发送消息时需要用发送者的 ID 来查找上下文
+        if wx_msg.from_user_id and wx_msg.context_token:
             self.context_cache.set(
-                to_user_id=wx_msg.to_user_id, context_token=wx_msg.context_token
+                to_user_id=wx_msg.from_user_id, context_token=wx_msg.context_token
             )
+            logger.debug(f"缓存 context_token: from_user_id={wx_msg.from_user_id}, token={wx_msg.context_token[:20]}...")
 
         # 转换为统一 Message 格式
         msg = Message(
@@ -499,9 +516,11 @@ class WeixinAdapter(BaseAdapter):
         )
 
         # 分发给处理器
+        logger.debug(f"分发给 {len(self._message_handlers)} 个消息处理器")
         for handler in self._message_handlers:
             try:
                 handler(msg)
+                logger.debug("消息处理器执行成功")
             except Exception as e:
                 logger.error(f"消息处理器异常: {e}")
 

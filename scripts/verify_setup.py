@@ -33,7 +33,7 @@ def check_dependencies():
         "loguru",
         "httpx",
         "lark_oapi",
-        "pycryptodome",
+        "Crypto",                 # pycryptodome 的导入模块名为 Crypto
         "websockets",
     ]
 
