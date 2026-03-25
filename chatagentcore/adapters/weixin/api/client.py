@@ -219,6 +219,13 @@ class WeixinHTTPClient:
 
             logger.debug(f"[{label}] Response: status={response.status_code}")
 
+            # 增强：输出响应内容（特别是 sendMessage）
+            response_text = response.text
+            if "sendMessage" in label or response_text:
+                # 对于 sendMessage 请求，输出完整响应以便调试
+                preview = response_text[:300] if response_text else "(empty)"
+                logger.debug(f"[{label}] Response body: {preview}{'...' if len(response_text) > 300 else ''}")
+
             # 检查响应状态
             if not response.is_success:
                 error_text = response.text

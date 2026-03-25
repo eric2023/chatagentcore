@@ -14,6 +14,7 @@
 
 import asyncio
 import time
+import uuid
 from typing import Any, Callable, Optional, Dict
 
 from loguru import logger
@@ -31,6 +32,8 @@ from .context.cache import ContextCache
 
 from .models.message import (
     MessageItemType,
+    MessageType,
+    MessageState,
     MessageItem,
     WeixinMessage,
     TextItem,
@@ -383,10 +386,17 @@ class WeixinAdapter(BaseAdapter):
             thumbnail_path=thumbnail_path,
         )
 
+        # 生成每条消息唯一的 client_id
+        client_id = f"bot-{uuid.uuid4().hex[:12]}"
+
         # 发送消息
         msg = WeixinMessage(
+            from_user_id="",  # 必需字段：标记发送方
             to_user_id=to,
+            client_id=client_id,  # 必需字段：每条消息唯一 ID
             context_token=context_token,
+            message_type=MessageType.BOT,  # 必需字段：标记为 BOT 消息
+            message_state=MessageState.FINISH,  # 必需字段：标记为完成态
             item_list=[
                 MessageItem(
                     type=media_type,

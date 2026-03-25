@@ -5,6 +5,7 @@
 """
 
 import json
+import uuid
 from typing import Optional, List
 
 from loguru import logger
@@ -19,6 +20,7 @@ from ..constants import (
 from ..models.message import (
     BaseInfo,
     MessageType,
+    MessageState,
     MessageItemType,
     MessageItem,
     WeixinMessage,
@@ -162,20 +164,38 @@ class MessagingAPI:
         Note:
             收到消息时会附带 context_token，发送消息时必须携带它
         """
-        payload = {"msg": msg, "base_info": build_base_info()}
+        # 将 Pydantic 模型序列化为字典
+        msg_dict = msg.model_dump(by_alias=True, exclude_none=True)
+
+        payload = {"msg": msg_dict, "base_info": build_base_info()}
 
         try:
+            # 增强：输出完整的消息字典信息
             logger.debug(
                 f"sendMessage: to={msg.to_user_id}, items={len(msg.item_list) if msg.item_list else 0}"
             )
+            logger.debug(f"sendMessage: 序列化后的消息字典 keys={list(msg_dict.keys())}")
 
-            await self.client.post(
+            # 输出关键字段用于调试
+            debug_info = {
+                "to_user_id": msg_dict.get("to_user_id"),
+                "message_type": msg_dict.get("message_type"),
+                "message_state": msg_dict.get("message_state"),
+                "has_context_token": bool(msg_dict.get("context_token")),
+                "context_token_prefix": msg_dict.get("context_token", "")[:20] + "..." if msg_dict.get("context_token") else None,
+                "item_list_type": msg_dict.get("item_list", [{}])[0].get("type") if msg_dict.get("item_list") else None,
+            }
+            logger.debug(f"sendMessage: 消息详情: {debug_info}")
+
+            response_text = await self.client.post(
                 "ilink/bot/sendmessage",
                 data=payload,
                 timeout_ms=15000,
                 label="sendMessage",
             )
 
+            # 增强：输出 API 响应内容
+            logger.debug(f"sendMessage: API 响应内容: {response_text[:200] if response_text else '(empty)'}...")
             logger.info(f"消息发送成功: to={msg.to_user_id}")
 
         except Exception as e:
@@ -198,9 +218,16 @@ class MessagingAPI:
         Raises:
             Exception: 发送失败
         """
+        # 生成每条消息唯一的 client_id（参考 openclaw-weixin 源码）
+        client_id = f"bot-{uuid.uuid4().hex[:12]}"
+
         msg = WeixinMessage(
+            from_user_id="",  # 必需字段：标记发送方
             to_user_id=to_user_id,
+            client_id=client_id,  # 必需字段：每条消息唯一 ID
             context_token=context_token,
+            message_type=MessageType.BOT,
+            message_state=MessageState.FINISH,
             item_list=[
                 MessageItem(
                     type=MessageItemType.TEXT,
